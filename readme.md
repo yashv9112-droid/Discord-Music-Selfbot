@@ -46,6 +46,19 @@ YT_DLP_PATH=            # optional, defaults to "yt-dlp" on PATH
 FFMPEG_PATH=            # optional, defaults to bundled ffmpeg-static
 ```
 
+### Local files (mp3/mp4)
+
+Put your audio/video files in a `music/` folder next to the bot (or set `MUSIC_DIR` to any folder), then:
+
+```
+!files              # list everything found (recursive)
+!playfile song.mp3  # play by filename
+!play song.mp3      # works too
+!play /home/you/Music/track.mp4
+```
+
+Supported extensions: `.mp3`, `.mp4`, `.wav`, `.ogg`, `.opus`, `.flac`, `.m4a`, `.webm`, `.aac`, `.mkv`, `.mov`. Paths with spaces work — wrap them in quotes if your shell needs it. Filters (`!pump`, etc.) apply to local files exactly like streams.
+
 > [!WARNING]
 > Local file playback uses paths relative to where the bot runs. To play a file on your machine, either run the bot on that machine or use a path the bot can read (e.g. `/home/you/Music/song.mp3`).
 
@@ -54,6 +67,8 @@ FFMPEG_PATH=            # optional, defaults to bundled ffmpeg-static
 | Command | Description |
 | --- | --- |
 | `!play <query>` | Play a local file, YouTube link/search, or Spotify link |
+| `!playfile <path\|name>` | Play a local mp3/mp4 by path or filename (verified to exist first) |
+| `!files [page]` | List local files found in the music folder |
 | `!pause` / `!resume` | Pause or resume playback |
 | `!skip` | Skip the current track |
 | `!stop` | Stop and clear the queue |

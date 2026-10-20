@@ -1,7 +1,25 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { readdirSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { isAbsolute, join, resolve as resolvePath } from 'node:path';
 import type { Readable } from 'node:stream';
 
 export type SourceType = 'local' | 'youtube' | 'spotify' | 'search';
+
+export const LOCAL_EXTENSIONS = [
+	'mp3',
+	'mp4',
+	'wav',
+	'ogg',
+	'opus',
+	'flac',
+	'm4a',
+	'webm',
+	'aac',
+	'mkv',
+	'mov',
+];
+
 
 export interface Track {
 	title: string;
@@ -56,19 +74,88 @@ export class Resolver {
 
 	isLocalPath(query: string): boolean {
 		const ext = query.toLowerCase().split('?')[0].split('.').pop() ?? '';
-		return [
-			'mp3',
-			'mp4',
-			'wav',
-			'ogg',
-			'opus',
-			'flac',
-			'm4a',
-			'webm',
-			'aac',
-			'mkv',
-			'mov',
-		].includes(ext);
+		return LOCAL_EXTENSIONS.includes(ext);
+	}
+
+	/**
+	 * Absolute path to the folder scanned by `!files` / `!playfile <index>`.
+	 * Defaults to `<cwd>/music`, override with `MUSIC_DIR`.
+	 */
+	musicDir(): string {
+		const dir = process.env.MUSIC_DIR || 'music';
+		return isAbsolute(dir) ? dir : resolvePath(process.cwd(), dir);
+	}
+
+	/**
+	 * List playable files inside the music folder (recursive, one level deep
+	 * is not enough for many libraries, so we walk the whole tree).
+	 */
+	listLocalFiles(): string[] {
+		const root = this.musicDir();
+		if (!existsSync(root)) return [];
+		const found: string[] = [];
+		const walk = (dir: string): void => {
+			let entries;
+			try {
+				entries = readdirSync(dir, { withFileTypes: true });
+			} catch {
+				return;
+			}
+			for (const entry of entries) {
+				const full = join(dir, entry.name);
+				if (entry.isDirectory()) {
+					walk(full);
+				} else if (this.isLocalPath(entry.name)) {
+					found.push(full);
+				}
+			}
+		};
+		walk(root);
+		return found.sort();
+	}
+
+	/**
+	 * Resolve a local file query to an absolute path, verifying it exists.
+	 * Throws a helpful error listing the music folder when it can't be found.
+	 */
+	resolveLocalFile(query: string): string {
+		const clean = query.replace(/^["']|["']$/g, '');
+		const candidates = [
+			clean,
+			isAbsolute(clean) ? clean : resolvePath(process.cwd(), clean),
+			isAbsolute(clean) ? clean : join(this.musicDir(), clean),
+		];
+		for (const candidate of candidates) {
+			if (existsSync(candidate) && statSync(candidate).isFile()) {
+				return candidate;
+			}
+		}
+		throw new Error(
+			`File not found: "${clean}". Put it in ${this.musicDir()} or use an absolute path. Run \`!files\` to list available files.`,
+		);
+	}
+
+	/**
+	 * Best-effort duration (seconds) for a local file using ffprobe if present.
+	 */
+	getLocalDuration(file: string): number | undefined {
+		const ffprobe = this.ffmpegPath.replace(/ffmpeg(\.exe)?$/i, 'ffprobe$1');
+		const result = spawnSync(
+			ffprobe,
+			[
+				'-v',
+				'error',
+				'-show_entries',
+				'format=duration',
+				'-of',
+				'default=noprint_wrappers=1:nokey=1',
+				file,
+			],
+			{ windowsHide: true, encoding: 'utf8' },
+		);
+		if (result.error || !result.stdout) return undefined;
+		const value = Number.parseFloat(result.stdout.trim());
+		return Number.isFinite(value) ? Math.round(value) : undefined;
 	}
 
 	/**
@@ -99,13 +186,13 @@ export class Resolver {
 	}
 
 	resolveLocal(path: string): Track {
-		const isVideo = /\.(mp4|mkv|mov|webm)$/i.test(path);
+		const file = this.resolveLocalFile(path);
 		return {
-			title: path.split(/[\\/]/).pop() || path,
-			url: path,
+			title: file.split(/[\\/]/).pop() || file,
+			url: file,
 			source: 'local',
-			input: path,
-			thumbnail: isVideo ? undefined : undefined,
+			input: file,
+			duration: this.getLocalDuration(file),
 		};
 	}
 

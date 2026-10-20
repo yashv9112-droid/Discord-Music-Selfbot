@@ -79,6 +79,64 @@ const stop: Command = async ({ player, send }) => {
 	return send('Stopped and cleared the queue.');
 };
 
+const playfile: Command = async ({ message, player, resolver, send }, args) => {
+	const query = args.join(' ').trim();
+	if (!query) {
+		return send(
+			"Usage: `!playfile <path|filename>` \u2014 e.g. `!playfile song.mp3`. Run `!files` to list what's available.",
+		);
+	}
+	const voiceChannel = message.member?.voice?.channel;
+	if (!voiceChannel) {
+		return send('You need to join a voice channel first.');
+	}
+	if (player.voiceChannelId && player.voiceChannelId !== voiceChannel.id) {
+		return send(
+			`I'm already playing in <#${player.voiceChannelId}>. Join me or use \`!leave\` first.`,
+		);
+	}
+	await player.connect(voiceChannel as any);
+
+	let track;
+	try {
+		track = resolver.resolveLocal(query);
+	} catch (error) {
+		return send((error as Error).message);
+	}
+
+	if (player.playing) {
+		await player.enqueue(track, message);
+		return send(
+			`Queued file **${track.title}** \u2022 position #${player.getQueue().length}`,
+		);
+	}
+	await player.enqueue(track, message);
+	return send(
+		`Now playing local file **${track.title}** (${formatDuration(track.duration)})`,
+	);
+};
+
+const files: Command = async ({ resolver, send }, args) => {
+	const all = resolver.listLocalFiles();
+	if (all.length === 0) {
+		return send(
+			`No local files found. Drop mp3/mp4 files into \`${resolver.musicDir()}\` then run \`!files\` again.`,
+		);
+	}
+	const page = Math.max(1, Number(args[0]) || 1);
+	const perPage = 15;
+	const pages = Math.ceil(all.length / perPage);
+	const current = Math.min(page, pages);
+	const slice = all.slice((current - 1) * perPage, current * perPage);
+	const lines = slice.map((file, index) => {
+		const name = file.split(/[\\/]/).pop();
+		return `\`${(current - 1) * perPage + index + 1}\`. ${name}`;
+	});
+	return send(
+		`\u{1f4c1} **Local files** (${all.length}) \u2014 page ${current}/${pages}\n${lines.join('\n')}\nPlay one with \`!playfile <name>\` or \`!play <name>\`.`,
+	);
+};
+
 const leave: Command = async ({ player, send }) => {
 	player.leave();
 	return send('Left the voice channel.');
@@ -136,6 +194,8 @@ const help: Command = async ({ send }) => {
 		[
 			'\u{1f3b5} **Music commands**',
 			'`!play <query>` \u2014 local mp3/mp4, YouTube URL/search, Spotify link',
+			'`!playfile <path|name>` \u2014 play a local mp3/mp4 (checked before playing)',
+			'`!files [page]` \u2014 list local files in the music folder',
 			'`!pause` / `!resume`',
 			'`!skip`',
 			'`!stop`',
@@ -305,6 +365,11 @@ const eightball: Command = async ({ send }, args) => {
 const commands: Record<string, Command> = {
 	play: play,
 	p: play,
+	playfile: playfile,
+	pf: playfile,
+	local: playfile,
+	files: files,
+	list: files,
 	skip: skip,
 	pause: pause,
 	resume: resume,
