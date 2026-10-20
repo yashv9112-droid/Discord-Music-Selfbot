@@ -1,5 +1,9 @@
 import type { Message } from 'discord.js-selfbot-v13';
-import { GuildPlayer, type LoopMode } from './player';
+import {
+	GuildPlayer,
+	PUMP_LEVELS,
+	type LoopMode,
+} from './player';
 import type { Resolver } from './resolver';
 
 export const PREFIX = '!';
@@ -140,8 +144,162 @@ const help: Command = async ({ send }) => {
 			'`!volume <0-100>`',
 			'`!loop [off|track|queue]`',
 			'`!leave`',
+			'',
+			'\u{1f525} **Loudness (escalating)**',
+			'`!pump` \u2014 show current loudness level & presets',
+			'`!pump <0-6>` \u2014 set a specific level',
+			`\`!loud\` / \`!louder\` / \`!loudest\` / \`!max\` / \`!insane\` / \`!headphonekiller\``,
+			'`!norm` / `!pumpoff` \u2014 reset to normal volume',
+			'`!pumpup` \u2014 crank it one step, `!pumpdown` \u2014 eases it back',
+			'',
+			'\u{1f39b}\ufe0f **Extras**',
+			'`!shuffle` \u2014 shuffle the queue',
+			'`!fuckit` \u2014 max loudness + shuffle (the full send)',
+			'`!eardrum` \u2014 \u201cstrongest music\u201d mode (headphone-killer)',
+			'`!roast` \u2014 a friendly judgy remark',
+			'`!vibe` \u2014 random hype line',
+			'`!8ball <question>` \u2014 ask the oracle',
 		].join('\n'),
 	);
+};
+
+const pump: Command = async ({ player, message, send }, args) => {
+	const value = Number(args[0]);
+	if (args.length === 0 || Number.isNaN(value)) {
+		const current = player.getPump();
+		const list = PUMP_LEVELS.map(
+			(step, index) =>
+				`${index === player.getPumpLevel() ? '\u25b6\ufe0f' : '\u2003'} \`${index}\` **${step.name}** \u2014 ${step.description}`,
+		).join('\n');
+		return send(
+			`\u{1f50a} Loudness level: **${player.getPumpLevel()} (${current.name})**\n${list}`,
+		);
+	}
+	if (value < 0 || value > PUMP_LEVELS.length - 1) {
+		return send(
+			`Pick a level between \`0\` and \`${PUMP_LEVELS.length - 1}\`.`,
+		);
+	}
+	player.setPumpLevel(value, message);
+	const step = player.getPump();
+	const warning =
+		value >= 5 ? '\n\u26a0\ufe0f Ear protection strongly advised!' : '';
+	return send(
+		`\u{1f50a} Loudness set to **${value} (${step.name})** \u2014 ${step.description}${warning}`,
+	);
+};
+
+async function setPumpAndAnnounce(
+	ctx: CommandContext,
+	level: number,
+	label?: string,
+): Promise<unknown> {
+	const { player, message, send } = ctx;
+	player.setPumpLevel(level, message);
+	const step = player.getPump();
+	const warning =
+		level >= 5 ? '\n\u26a0\ufe0f Ear protection strongly advised!' : '';
+	return send(
+		`\u{1f50a} ${label ?? 'Loudness'} \u2192 **${step.name}** \u2014 ${step.description}${warning}`,
+	);
+}
+
+const loud: Command = (ctx) => setPumpAndAnnounce(ctx, 1, 'Turned it up');
+const louder: Command = (ctx) => setPumpAndAnnounce(ctx, 2, 'Louder');
+const loudest: Command = (ctx) => setPumpAndAnnounce(ctx, 3, 'Loudest');
+const max: Command = (ctx) => setPumpAndAnnounce(ctx, 4, 'MAX');
+const insane: Command = (ctx) => setPumpAndAnnounce(ctx, 5, 'INSANE');
+const headphonekiller: Command = (ctx) =>
+	setPumpAndAnnounce(ctx, 6, '\u{1f480} HEADPHONE KILLER');
+
+const pumpup: Command = async (ctx) => {
+	const next = ctx.player.getPumpLevel() + 1;
+	if (next > PUMP_LEVELS.length - 1) {
+		return ctx.send('Already at maximum loudness. \u{1f525}');
+	}
+	return setPumpAndAnnounce(ctx, next, 'Pumped up');
+};
+
+const pumpdown: Command = async (ctx) => {
+	const prev = ctx.player.getPumpLevel() - 1;
+	if (prev < 0) {
+		return ctx.send('Already at normal volume.');
+	}
+	return setPumpAndAnnounce(ctx, prev, 'Eased down');
+};
+
+const pumpoff: Command = async (ctx) => {
+	ctx.player.setPumpLevel(0, ctx.message);
+	return ctx.send('\u{1f50a} Back to normal loudness.');
+};
+
+const shuffle: Command = async ({ player, message, send }) => {
+	const queue = player.getQueue();
+	if (queue.length < 2) {
+		return send('Not enough tracks in the queue to shuffle.');
+	}
+	player.shuffleQueue();
+	void message;
+	return send(`\u{1f500} Shuffled **${queue.length}** tracks.`);
+};
+
+const fuckit: Command = async (ctx) => {
+	ctx.player.setPumpLevel(6, ctx.message);
+	ctx.player.shuffleQueue();
+	return ctx.send(
+		'\u{1f525}\u{1f480} **FULL SEND** \u2014 headphone-killer loudness + shuffled queue. RIP your ears. \u{1f525}\u{1f480}',
+	);
+};
+
+const eardrum: Command = async (ctx) => {
+	ctx.player.setPumpLevel(6, ctx.message);
+	const track = ctx.player.track;
+	return ctx.send(
+		`\u{1f4a5} **STRONGEST MUSIC MODE** \u2014 cranking${track ? ` **${track.title}**` : ''} to headphone-killer levels. Brace yourself!`,
+	);
+};
+
+const ROASTS = [
+	"You call this a queue? My grandma DJs harder.",
+	'This playlist has fewer hits than my last ranked match.',
+	"You play music like you type \u2014 one finger at a time.",
+	'Bold of you to queue that in public.',
+	'The only thing dropping harder than this beat is your standards.',
+];
+
+const roast: Command = async ({ send }) => {
+	const line = ROASTS[Math.floor(Math.random() * ROASTS.length)];
+	return send(`\u{1f525} ${line}`);
+};
+
+const VIBES = [
+	'Speed it up, we got a vibe to catch \u26a1',
+	'Turn it up until the neighbours file a complaint',
+	'This one goes straight to the headphones \u{1f3a7}',
+	'No skips, only hits \u{1f4a5}',
+	'Volume is a suggestion, not a limit \u{1f50a}',
+];
+
+const vibe: Command = async ({ send }) => {
+	const line = VIBES[Math.floor(Math.random() * VIBES.length)];
+	return send(`\u2728 ${line}`);
+};
+
+const EIGHT_BALL = [
+	'It is certain. \u{1f52e}',
+	'Without a doubt. \u{1f52e}',
+	'Ask again after the next drop. \u{1f52e}',
+	'My sources say no. \u{1f52e}',
+	'Cannot predict now \u2014 too busy vibing. \u{1f52e}',
+	'Signs point to yes. \u{1f52e}',
+];
+
+const eightball: Command = async ({ send }, args) => {
+	if (args.length === 0) {
+		return send('Ask me a question: `!8ball will this song slap?`');
+	}
+	const answer = EIGHT_BALL[Math.floor(Math.random() * EIGHT_BALL.length)];
+	return send(`\u{1f3b1} ${answer}`);
 };
 
 const commands: Record<string, Command> = {
@@ -160,6 +318,25 @@ const commands: Record<string, Command> = {
 	loop: loop,
 	nowplaying: nowplaying,
 	np: nowplaying,
+	pump: pump,
+	loud: loud,
+	louder: louder,
+	loudest: loudest,
+	max: max,
+	insane: insane,
+	headphonekiller: headphonekiller,
+	hk: headphonekiller,
+	pumpup: pumpup,
+	pumpdown: pumpdown,
+	pumpoff: pumpoff,
+	norm: pumpoff,
+	normal: pumpoff,
+	shuffle: shuffle,
+	fuckit: fuckit,
+	eardrum: eardrum,
+	roast: roast,
+	vibe: vibe,
+	'8ball': eightball,
 	help: help,
 	commands: help,
 };

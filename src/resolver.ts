@@ -180,10 +180,21 @@ export class Resolver {
 	 * Return a ReadableStream of 16-bit stereo PCM audio (48kHz) via ffmpeg,
 	 * suitable for `VoiceConnection#playAudio(stream, { type: 'converted' })`.
 	 */
-	createPcmStream(track: Track): Readable {
-		let proc: ReturnType<typeof spawn>;
+	createPcmStream(track: Track, filters = ''): Readable {
+		const filterArgs = filters ? ['-af', filters] : [];
+		const outputArgs = [
+			...filterArgs,
+			'-vn',
+			'-f',
+			's16le',
+			'-ar',
+			'48000',
+			'-ac',
+			'2',
+			'pipe:1',
+		];
 		if (track.source === 'local') {
-			proc = spawn(
+			return spawn(
 				this.ffmpegPath,
 				[
 					'-hide_banner',
@@ -191,35 +202,42 @@ export class Resolver {
 					'error',
 					'-i',
 					track.input,
-					'-vn',
-					'-f',
-					's16le',
-					'-ar',
-					'48000',
-					'-ac',
-					'2',
-					'pipe:1',
+					...outputArgs,
 				],
 				{ windowsHide: true },
-			);
-		} else {
-			proc = spawn(
-				this.ytDlpPath,
-				[
-					'--no-playlist',
-					'-f',
-					'bestaudio',
-					'-o',
-					'-',
-					'--quiet',
-					'--no-warnings',
-					'-i',
-					track.input,
-				],
-				{ windowsHide: true },
-			);
+			).stdout as Readable;
 		}
-		return proc.stdout as Readable;
+		// YouTube/Spotify: pipe yt-dlp's raw audio into ffmpeg for decoding,
+		// filtering and PCM conversion.
+		const ytDlp = spawn(
+			this.ytDlpPath,
+			[
+				'--no-playlist',
+				'-f',
+				'bestaudio',
+				'-o',
+				'-',
+				'--quiet',
+				'--no-warnings',
+				track.input,
+			],
+			{ windowsHide: true },
+		);
+		const ffmpegProc = spawn(
+			this.ffmpegPath,
+			[
+				'-hide_banner',
+				'-loglevel',
+				'error',
+				'-i',
+				'pipe:0',
+				...outputArgs,
+			],
+			{ windowsHide: true },
+		);
+		ytDlp.stdout.pipe(ffmpegProc.stdin!);
+		ytDlp.on('error', () => ffmpegProc.stdin?.end());
+		return ffmpegProc.stdout as Readable;
 	}
 
 	async ytDlpJson(target: string): Promise<any | null> {

@@ -64,6 +64,34 @@ FFMPEG_PATH=            # optional, defaults to bundled ffmpeg-static
 | `!leave` | Disconnect from the voice channel |
 | `!help` | Show the command list |
 
+### 🔥 Loudness ("strongest music" mode)
+
+Playback gets progressively louder and punchier using stacked ffmpeg compression + gain. Level 6 is roughly **8× louder** than normal (measured by RMS) and will genuinely blow headphones off.
+
+| Command | Description |
+| --- | --- |
+| `!pump` | Show the current level and all presets |
+| `!pump <0-6>` | Set a specific loudness level |
+| `!loud` / `!louder` / `!loudest` / `!max` / `!insane` / `!headphonekiller` | Jump straight to a level |
+| `!pumpup` / `!pumpdown` | Crank it up / ease it back one step |
+| `!norm` / `!pumpoff` | Reset to normal volume |
+
+**Levels:** `0` off · `1` loud · `2` louder · `3` loudest · `4` max · `5` insane · `6` headphone-killer
+
+### 🎛️ Extras
+
+| Command | Description |
+| --- | --- |
+| `!shuffle` | Shuffle the queue |
+| `!fuckit` | Max loudness + shuffled queue (the full send) |
+| `!eardrum` | "Strongest music" mode (headphone-killer) |
+| `!roast` | A friendly judgy remark |
+| `!vibe` | Random hype line |
+| `!8ball <question>` | Ask the oracle |
+
+> [!WARNING]
+> Loudness levels 5–6 boost the signal hard via compression and limiting. Listener hearing damage is on you — wear ear protection at high levels and don't run this on unsuspecting people.
+
 The `!` prefix is configurable in `src/commands.ts` (`PREFIX`).
 
 ## 🧠 How Spotify support works
